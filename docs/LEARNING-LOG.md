@@ -1,3 +1,39 @@
+## 2026-08-10 — Project contract and data model
+
+**Built**
+- README: problem, users, non-goals, acceptance criteria, endpoint table.
+- docs/data-model.md: Mermaid ER diagram plus constraint rationale.
+
+**Decided**
+- Overdraft option B: per-account overdraft_limit column rather than a hard
+  zero floor. Limits can vary without a code change.
+- 422 for overdraft rejection, not 400. The request is well-formed; rejection
+  depends on account state, so it isn't a syntax problem. Bean Validation
+  failures will produce 400 separately, which is the correct split.
+- No currency on Transaction. Transactions inherit the account's currency —
+  fewer fields to validate, and multi-currency is an explicit non-goal.
+- Balance derived from the ledger, not stored on Account.
+- RequestRecord as its own table rather than a key column on Transaction.
+
+**Broke**
+- Nothing broke, but IntelliJ Community doesn't render Mermaid in preview.
+  Confirmed it renders on GitHub instead.
+
+**Can explain without help**
+- Why an immutable ledger is auditable and a stored balance isn't.
+- What request_hash adds over a bare idempotency key, and why the body must be
+  canonicalised before hashing.
+- The difference between 400, 409 and 422.
+- Why the overdraft check is a concurrency hazard.
+
+**Next**
+Scaffold via Spring Initializr (Maven, Java 21, Web, Validation, Data JPA,
+PostgreSQL driver, Actuator; add springdoc, Flyway, Testcontainers manually).
+Docker Compose for PostgreSQL 16 before writing any entity.
+
+
+
+
 # Learning Log
 
 ## 2026-08-07 — Day Zero: Toolchain
