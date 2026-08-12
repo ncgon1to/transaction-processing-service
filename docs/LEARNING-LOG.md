@@ -1,3 +1,79 @@
+## 2026-08-12 — Flyway migrations
+
+**Built**
+- V1__create_core_tables.sql: account, transactions, request_record and alert,
+  with named check constraints, foreign keys, and the unique constraints on
+  idempotency_key and (transaction_id, rule_code).
+- V2__add_indexes.sql: one composite index on transactions
+  (account_id, occurred_at DESC), plus comments recording the indexes
+  deliberately omitted and why.
+- Verified against the running database with `\dt`, `\d transactions` and a
+  query on flyway_schema_history. Both migrations applied, both successful.
+
+**Broke**
+- Flyway silently did not run. No error, no log line, green build, empty
+  database. Cause: Spring Boot 4 no longer auto-configures Flyway from
+  `flyway-core` alone — the auto-configuration moved into
+  `spring-boot-starter-flyway` as part of the modularization. Swapping the
+  dependency fixed it. This is the third Boot 4 modularization problem so far,
+  after the per-module test starters and the Testcontainers artifact rename.
+  General rule: in Boot 4 a raw library on the classpath is not wired up; it
+  needs its starter.
+- Two SQL syntax errors in V1: a missing `);` closing the transactions table,
+  then a `):` typo in its place. Both were reported by PostgreSQL at the *next*
+  `CREATE` keyword rather than at the actual mistake — the parser fails one
+  token past the problem, so look immediately before the reported position.
+- Each failure had to be cleared before Flyway would retry, since it records
+  failed migrations in flyway_schema_history. Used `docker compose down -v` to
+  drop the volume, which is fine for a dev database with nothing in it;
+  `flyway repair` is the equivalent for anything real.
+- Wasted time investigating the migration folder path on a false lead — the
+  folder was correct all along, IntelliJ just compacts `db/migration` into a
+  single `db.migration` row in the project tree. Confirmed with `dir` rather
+  than by reading the IDE.
+
+**Decided**
+- `transactions` plural, because `transaction` is a reserved SQL word. Will map
+  the entity with `@Table(name = "transactions")`.
+- `numeric(19,4)` for money, never a floating-point type. Binary floating point
+  cannot represent decimal fractions exactly and the error compounds across a
+  ledger. Maps to BigDecimal.
+- Named every constraint rather than letting PostgreSQL generate names, so
+  error messages are meaningful and tests can assert on which constraint fired.
+- Regex check on currency (`^[A-Z]{3}$`) rather than relying on char(3) alone,
+  which would accept 'ab1'.
+- `request_record.transaction_id` left nullable, so a request that was received
+  and rejected can still be recorded and a retry gets the same response.
+- No `updated_at` on any table — nothing is ever updated. The immutability
+  decision shows up as an absence in the schema.
+- V2 contains only one index. Omitted `transactions(type)` (two distinct
+  values, so an index would match roughly half the table and the planner would
+  prefer a sequential scan), `alert(transaction_id)` (redundant — the UNIQUE
+  (transaction_id, rule_code) constraint creates a composite index whose
+  leading column is transaction_id), and `request_record(idempotency_key)`
+  (redundant for the same reason). Not yet verified against a real query plan;
+  will check with EXPLAIN ANALYZE once there is data.
+
+**Can explain without help**
+- Why Flyway rather than Hibernate owns the schema, and what
+  `ddl-auto=validate` does.
+- Why migrations are immutable and checksummed, and why a change means adding
+  V3 rather than editing V1.
+- Why a composite index on (a, b) serves queries on `a` or on `a` and `b`, but
+  not on `b` alone.
+- Why a unique constraint gives you an index for free, and why that makes some
+  additional indexes redundant.
+- Why low-cardinality columns rarely justify an index.
+- Why exact decimal types matter for money.
+
+**Next**
+Domain layer: Account and Transaction entities, enums for status and type,
+repository interfaces, BigDecimal for money and Instant for timestamps.
+`ddl-auto=validate` will finally have something to check the mapping against.
+
+
+
+
 ## 2026-08-11 - Scaffold, dependencies and local database
 
 **Built**
