@@ -1,3 +1,54 @@
+## 2026-08-20 — Error contract
+
+**Built**
+- `ErrorResponse` record in `dto` with code, message, timestamp, path and a
+  list of field errors, plus a nested `FieldError` record and two static
+  factories so the common no-field-errors case stays terse.
+- `GlobalExceptionHandler` annotated `@RestControllerAdvice` with three
+  handlers: `AccountNotFoundException` → 404, `MethodArgumentNotValidException`
+  → 400 with one entry per failing field, and a catch-all `Exception` → 500.
+- Verified both through Swagger UI: a nonexistent but valid UUID returns 404
+  with `ACCOUNT_NOT_FOUND`; a request with three invalid fields returns 400
+  with `VALIDATION_FAILED` and all three reported in one response, each
+  carrying the custom message written on the DTO.
+
+**Decided**
+- The catch-all logs the full stack trace server-side but returns only
+  "An unexpected error occurred" to the client. Stack traces leak framework
+  versions, package structure and sometimes SQL, and the acceptance criteria
+  say internals are never exposed.
+- A machine-readable `code` alongside the human `message`, so clients branch
+  on a stable identifier rather than string-matching prose that might be
+  reworded.
+- All validation failures reported at once rather than stopping at the first,
+  so a client fixes everything in one round trip.
+- `@RestControllerAdvice` rather than try/catch in controllers: one class,
+  every endpoint consistent, and no error-handling noise in the request
+  methods.
+
+**Learned**
+- Spring resolves to the most specific matching handler, so the `Exception`
+  catch-all does not swallow `AccountNotFoundException` despite being a
+  supertype.
+- Swagger UI validates path parameters client-side. Entering `2223` for a
+  UUID never reaches the server, so it does not test the 404 path — a valid
+  but nonexistent UUID is needed.
+- `"currency": "KVJ"` is accepted. The regex checks format, not whether the
+  code is a real ISO 4217 currency. Knowing where the validation stops
+  matters as much as knowing it exists.
+
+**Known gaps**
+- Swagger shows every status as "Undocumented". No `@ApiResponse` or
+  `@Operation` annotations yet, and the error shape is not declared anywhere
+  in the OpenAPI spec. Blueprint step 13.
+- No automated tests for any of this. Verified by hand through Swagger, which
+  does not count towards the 25 the definition of done requires.
+
+**Next**
+Blueprint step 7: transaction submission. Balance check, idempotency record
+and ledger insert inside a single database transaction — where the
+concurrency hazard from choosing per-account overdraft limits becomes real.
+
 ## 2026-08-20 — Account endpoints working end to end
 
 **Built**
