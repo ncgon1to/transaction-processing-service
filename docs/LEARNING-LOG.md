@@ -1,3 +1,77 @@
+## 2026-08-20 — Account endpoints working end to end
+
+**Built**
+- `CreateAccountRequest` and `AccountResponse` as records in a new `dto`
+  package, with Bean Validation annotations mirroring the database
+  constraints.
+- `AccountService` with `createAccount` and `getAccount`, constructor
+  injection of `AccountRepository`, and `@Transactional` boundaries.
+- `AccountNotFoundException` as a domain-specific exception.
+- `AccountController` exposing `POST /accounts` (201 with a Location header)
+  and `GET /accounts/{id}` (200).
+- Verified end to end: created an account over HTTP, fetched it back, and
+  confirmed the row directly in PostgreSQL with psql rather than trusting the
+  API response. `overdraft_limit` stored as 500.0000, so the numeric(19,4)
+  scale survives the whole round trip.
+- Confirmed validation rejects a blank name, lowercase currency and negative
+  overdraft with 400 before the service method runs.
+
+**Broke**
+- Long pastes into IntelliJ kept truncating — `AccountService` arrived twice
+  with the methods missing, the second time parsing cleanly but doing nothing.
+  A truncated paste looks correct at the top, so check the last line matches
+  what was expected. The compiler is the authority, not the editor.
+- Created the `dto` package at `src/main/java/dto` instead of under the
+  application package, again. The New Package dialog pre-fills the parent
+  path; the fix is to read the box before typing rather than typing the full
+  name over it.
+- PowerShell mangles escaped quotes in `curl -d`, so the JSON never arrived
+  and the endpoint returned 400 for the wrong reason. `Invoke-RestMethod` with
+  `ConvertTo-Json` avoids the escaping entirely.
+- `docker compose` failed with "no configuration file provided" in a second
+  terminal — wrong working directory, not a Compose problem.
+
+**Decided**
+- DTOs rather than exposing entities. The response carries `balance`, which
+  has no column, so the API shape and the schema shape differ deliberately —
+  the derived-balance decision surfacing at the boundary.
+- Records for DTOs: immutable, no behaviour, everything generated from one
+  declaration.
+- Validation duplicated between DTO annotations and database constraints on
+  purpose. The database must be correct regardless of caller; the API
+  boundary exists to give clients a useful message instead of a constraint
+  violation.
+- Constructor injection over field `@Autowired` — dependencies are explicit,
+  the field can be final, and the service is unit-testable without Spring.
+- `@Transactional(readOnly = true)` on the getter: lets Hibernate skip dirty
+  checking and states intent.
+- `calculateBalance` left as a placeholder returning zero. A new account has
+  no ledger entries, so this is correct until transactions exist.
+
+**Known gaps**
+- `GET /accounts/{id}` on a missing account returns 500, not the 404 the
+  acceptance criteria specify. `AccountNotFoundException` propagates
+  unhandled.
+- The 400 response uses Spring's default error shape, not the documented
+  contract (code, message, timestamp, path, field errors).
+- Both are blueprint step 11 and are the next piece of work.
+
+**Can explain without help**
+- Why `@Valid` is required for Bean Validation annotations to do anything.
+- Why DTOs decouple the API contract from the database schema.
+- What `ResponseEntity.created(location)` returns and why 201 plus a Location
+  header is the convention for creation.
+- Why constructor injection beats field injection for testability.
+- What `@Transactional` guarantees and why it will matter for the transaction
+  submission endpoint.
+
+**Next**
+Global exception handler and the error contract: map
+`AccountNotFoundException` to 404 and `MethodArgumentNotValidException` to the
+documented 400 shape with field errors.
+
+
+
 ## 2026-08-12 — Flyway migrations
 
 **Built**
